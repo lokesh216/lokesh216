@@ -1,0 +1,106 @@
+
+#include "HX711.h"
+HX711 scale;
+//load cell pins to arduino
+#define LOADCELL_DOUT_PIN  2
+#define LOADCELL_SCK_PIN  3
+float calibration_factor = 86420; 
+
+//tilt sensor pins to arduino
+int tiltPin =4; 
+int tiltVal;
+int led=7;
+
+int scal = 3; // 3 (±3g) for ADXL337, 200 (±200g) for ADXL377
+
+
+void setup() {
+
+  // tiltsensor setup
+  pinMode(tiltPin,INPUT);
+  pinMode(led,OUTPUT);
+  digitalWrite(tiltPin,HIGH);
+  Serial.begin(9600);
+
+
+  //setup for getting the load on the loadcell for detecting overload
+  //Serial.println("HX711 calibration sketch");
+  Serial.println("Remove all weight from scale");
+  Serial.println("After readings begin, place known weight on scale");
+  //Serial.println("Press + or a to increase calibration factor");
+  //Serial.println("Press - or z to decrease calibration factor");
+  
+  scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+  scale.set_scale();
+  scale.tare(); //Reset the scale to 0
+  
+  long zero_factor = scale.read_average(); //Get a baseline reading
+  Serial.print("Zero factor: "); //This can be used to remove the need to tare the scale. Useful in permanent scale projects.
+  Serial.println(zero_factor);
+}
+
+void loop() {
+
+  // tiltsensor loop for sensing the tilt in the structure
+  tiltVal = digitalRead(tiltPin);
+  Serial.println("If tilts then output is high:");Serial.println(tiltVal);
+  if(tiltVal ==1){
+    digitalWrite(led,HIGH);
+  }
+  if(tiltVal ==0){
+    digitalWrite(led,LOW);
+  }
+
+  // Get raw accelerometer data for each axis
+  int rawX = analogRead(A0);
+  int rawY = analogRead(A1);
+  int rawZ = analogRead(A2);
+ 
+  // Scale accelerometer ADC readings into common units
+  // Scale map depends on if using a 5V or 3.3V microcontroller
+  float scaledX, scaledY, scaledZ; // Scaled values for each axis
+  scaledX = mapf(rawX, 0, 675, -scal, scal); // 3.3/5 * 1023 =~ 675
+  scaledY = mapf(rawY, 0, 675, -scal, scal);
+  scaledZ = mapf(rawZ, 0, 675, -scal, scal);
+ 
+  // Print out raw X,Y,Z accelerometer readings
+  Serial.print("X: "); Serial.println(rawX);
+  Serial.print("Y: "); Serial.println(rawY);
+  Serial.print("Z: "); Serial.println(rawZ);
+  Serial.println();
+ 
+  // Print out scaled X,Y,Z accelerometer readings
+  Serial.print("X: "); Serial.print(scaledX); Serial.println(" g");
+  Serial.print("Y: "); Serial.print(scaledY); Serial.println(" g");
+  Serial.print("Z: "); Serial.print(scaledZ); Serial.println(" g");
+  Serial.println();
+ 
+  delay(2000); 
+  
+
+  scale.set_scale(calibration_factor); //Adjust to this calibration factor
+  Serial.print("Reading: ");
+  Serial.print(scale.get_units(), 2);
+  
+  Serial.print(" kg"); //Change this to kg and re-adjust the calibration factor if you follow SI units like a sane person
+  //Serial.print(" calibration_factor: ");
+  //Serial.print(calibration_factor);
+  if(scale.get_units() > 1){
+    Serial.print("Overload");
+  }
+  Serial.println();
+
+  if(Serial.available())
+  {
+    char temp = Serial.read();
+    if(temp == '+' || temp == 'a')
+      calibration_factor += 10;
+    else if(temp == '-' || temp == 'z')
+      calibration_factor -= 10;
+  }
+}
+
+float mapf(float x, float in_min, float in_max, float out_min, float out_max)
+{
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
