@@ -1,0 +1,118 @@
+
+
+#include <ESP8266WiFi.h>
+#include "secrets.h"
+#include "ThingSpeak.h"
+#include "HX711.h"
+
+// always include thingspeak header file after other header files and custom macros
+
+HX711 scale;
+//load cell pins to arduino
+
+float calibration_factor = 86420; 
+
+//tilt sensor pins to arduino 
+int tiltVal;
+
+
+int scal = 3;
+int number = 0;
+
+char ssid[] = SECRET_SSID;   // your network SSID (name) 
+char pass[] = SECRET_PASS;   // your network password
+int keyIndex = 0;            // your network key Index number (needed only for WEP)
+WiFiClient  client;
+
+unsigned long myChannelNumber = SECRET_CH_ID;
+const char * myWriteAPIKey = SECRET_WRITE_APIKEY;
+String myStatus = "";
+void setup() {
+  Serial.begin(15200);  // Initialize serial
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for Leonardo native USB port only
+  }
+  
+  WiFi.mode(WIFI_STA); 
+  ThingSpeak.begin(client);  // Initialize ThingSpeak
+  // tiltsensor setup
+  pinMode(4,INPUT);
+  pinMode(7,OUTPUT);
+  digitalWrite(4,HIGH);
+  Serial.begin(15200);
+
+
+  Serial.println("Remove all weight from scale");
+  Serial.println("After readings begin, place known weight on scale");
+ 
+  scale.begin(2, 3);
+  scale.set_scale();
+  scale.tare(); //Reset the scale to 0
+  
+  long zero_factor = scale.read_average(); //Get a baseline reading
+  Serial.print("Zero factor: "); //This can be used to remove the need to tare the scale. Useful in permanent scale projects.
+  Serial.println(zero_factor);
+}
+
+void loop() {
+
+  // Connect or reconnect to WiFi
+  if(WiFi.status() != WL_CONNECTED){
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println(SECRET_SSID);
+    while(WiFi.status() != WL_CONNECTED){
+      WiFi.begin(ssid, pass);  // Connect to WPA/WPA2 network. Change this line if using open or WEP network
+      Serial.print(".");
+      delay(5000);     
+    } 
+    Serial.println("\nConnected.");
+  }
+  // write to the ThingSpeak channel
+  int x = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+  if(x == 200){
+    Serial.println("Channel update successful.");
+  }
+  else{
+    Serial.println("Problem updating channel. HTTP error code " + String(x));
+  }
+  // tiltsensor loop for sensing the tilt in the structure
+  tiltVal = digitalRead(4);
+  Serial.println("If tilts then output is high:");Serial.println(tiltVal);
+  if(tiltVal ==1){
+    digitalWrite(7,HIGH);
+  }
+  if(tiltVal ==0){
+    digitalWrite(7,LOW);
+  }
+
+  
+ 
+
+  scale.set_scale(calibration_factor); //Adjust to this calibration factor
+  Serial.print("Reading: ");
+  Serial.print(scale.get_units(), 2);
+  
+  Serial.print(" kg"); //Change this to kg and re-adjust the calibration factor if you follow SI units like a sane person
+  //Serial.print(" calibration_factor: ");
+  //Serial.print(calibration_factor);
+  if(scale.get_units() > 1){
+    Serial.print("Overload");
+  }
+  Serial.println();
+
+  if(Serial.available())
+  {
+    char temp = Serial.read();
+    if(temp == '+' || temp == 'a')
+      calibration_factor += 10;
+    else if(temp == '-' || temp == 'z')
+      calibration_factor -= 10;
+  }
+  number = random(0,100);
+  // set the fields with the values
+  ThingSpeak.setField(1, tiltVal);
+  ThingSpeak.setField(2, number);
+  ThingSpeak.setField(3, scale.get_units());
+  
+  delay(20000); // Wait 20 seconds to update the channel again
+}
